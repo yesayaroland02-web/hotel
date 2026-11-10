@@ -1,11 +1,8 @@
-
 "use client";
 
 import { Suspense, useState, type FormEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-
-const API_URL =
-  process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+import { api } from "@/config/axios";
 
 interface CheckoutOrder {
   id: string;
@@ -40,7 +37,10 @@ function CheckoutContent() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
-  // Validasi tanggal. Jumlah malam tidak memengaruhi harga.
+  // ======================================================
+  // HITUNG DURASI MENGINAP
+  // ======================================================
+
   const nights =
     checkIn && checkOut
       ? Math.ceil(
@@ -50,8 +50,16 @@ function CheckoutContent() {
         )
       : 0;
 
-  // Total pembayaran hanya berdasarkan jumlah kamar.
+  // ======================================================
+  // HITUNG TOTAL HARGA
+  // Harga kamar x jumlah kamar
+  // ======================================================
+
   const estimatedTotal = price * quantity;
+
+  // ======================================================
+  // FORMAT RUPIAH
+  // ======================================================
 
   const formatRupiah = (amount: number) =>
     new Intl.NumberFormat("id-ID", {
@@ -59,10 +67,6 @@ function CheckoutContent() {
       currency: "IDR",
       maximumFractionDigits: 0,
     }).format(amount);
-
-  const getToken = () => {
-    return localStorage.getItem("accessToken");
-  };
 
   // ======================================================
   // CREATE CHECKOUT
@@ -76,68 +80,69 @@ function CheckoutContent() {
     setError("");
     setMessage("");
 
+    // Validasi produk
     if (!productId) {
       setError("ID kamar tidak ditemukan. Silakan pilih kamar kembali.");
       return;
     }
 
+    // Validasi harga
     if (!Number.isFinite(price) || price <= 0) {
       setError("Harga kamar tidak ditemukan. Silakan pilih kamar kembali.");
       return;
     }
 
+    // Validasi tanggal
     if (!checkIn || !checkOut || nights <= 0) {
       setError("Tanggal check-in dan check-out tidak valid.");
       return;
     }
 
+    // Validasi jumlah kamar
     if (!Number.isInteger(quantity) || quantity < 1) {
       setError("Jumlah kamar minimal 1.");
       return;
     }
 
-    const token = getToken();
+    // Validasi login
+    const token = localStorage.getItem("accessToken");
 
     if (!token) {
       setError("Silakan login terlebih dahulu.");
+      router.push("/login");
       return;
     }
 
     try {
       setLoading(true);
 
-      const response = await fetch(`${API_URL}/api/checkout`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          checkIn,
-          checkOut,
-          items: [
-            {
-              productId,
-              quantity,
-            },
-          ],
-        }),
+      // Request checkout melalui Axios
+      const response = await api.post("/api/checkout", {
+        checkIn,
+        checkOut,
+        items: [
+          {
+            productId,
+            quantity,
+          },
+        ],
       });
 
-      const result = await response.json();
+      const result = response.data;
 
-      if (!response.ok) {
-        throw new Error(result.message || "Checkout gagal dibuat.");
-      }
-
+      // Menyesuaikan kemungkinan struktur response backend
       const checkoutData =
-        result.order || result.data?.order || result.data;
+        result.order ||
+        result.data?.order ||
+        result.data;
 
       if (
         !checkoutData?.id ||
         checkoutData.totalAmount === undefined
       ) {
-        throw new Error("Data pesanan dari server tidak lengkap.");
+        throw new Error(
+          result.message || "Data pesanan dari server tidak lengkap."
+        );
       }
 
       const newOrder: CheckoutOrder = {
@@ -147,15 +152,31 @@ function CheckoutContent() {
 
       setOrder(newOrder);
 
+      // Simpan order sementara
       sessionStorage.setItem(
         "hotel_checkout_order",
         JSON.stringify(newOrder)
       );
 
-      setMessage("Pesanan berhasil dibuat. Silakan lakukan pembayaran.");
-    } catch (err) {
+      setMessage(
+        "Pesanan berhasil dibuat. Silakan lakukan pembayaran."
+      );
+    } catch (err: unknown) {
+      console.error("Checkout error:", err);
+
+      const axiosError = err as {
+        response?: {
+          data?: {
+            message?: string;
+          };
+        };
+        message?: string;
+      };
+
       setError(
-        err instanceof Error ? err.message : "Terjadi kesalahan."
+        axiosError.response?.data?.message ||
+          axiosError.message ||
+          "Terjadi kesalahan saat membuat pesanan."
       );
     } finally {
       setLoading(false);
@@ -174,21 +195,25 @@ function CheckoutContent() {
     setError("");
     setMessage("");
 
+    // Validasi order
     if (!order) {
       setError("Buat pesanan terlebih dahulu.");
       return;
     }
 
+    // Validasi file
     if (!paymentProof) {
       setError("Pilih bukti pembayaran terlebih dahulu.");
       return;
     }
 
+    // Validasi ukuran file
     if (paymentProof.size > 5 * 1024 * 1024) {
       setError("Ukuran file maksimal 5 MB.");
       return;
     }
 
+    // Validasi format file
     if (
       !["image/jpeg", "image/png", "image/webp"].includes(
         paymentProof.type
@@ -198,53 +223,65 @@ function CheckoutContent() {
       return;
     }
 
-    const token = getToken();
+    // Validasi login
+    const token = localStorage.getItem("accessToken");
 
     if (!token) {
       setError("Silakan login kembali.");
+      router.push("/login");
       return;
     }
 
+    // FormData untuk upload gambar
     const formData = new FormData();
     formData.append("paymentProof", paymentProof);
 
     try {
       setUploading(true);
 
-      const response = await fetch(
-        `${API_URL}/api/checkout/${order.id}/payment-proof`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-          body: formData,
-        }
+      // Upload melalui Axios
+      // Authorization otomatis ditambahkan interceptor
+      const response = await api.post(
+        `/api/checkout/${order.id}/payment-proof`,
+        formData
       );
 
-      const result = await response.json();
+      const result = response.data;
 
-      if (!response.ok) {
-        throw new Error(
-          result.message || "Upload bukti pembayaran gagal."
-        );
-      }
-
+      // Hapus order sementara
       sessionStorage.removeItem("hotel_checkout_order");
 
       alert(
-        "Bukti pembayaran berhasil diunggah! Silakan tunggu verifikasi admin."
+        result.message ||
+          "Bukti pembayaran berhasil diunggah! Silakan tunggu verifikasi admin."
       );
 
       router.replace("/products");
-    } catch (err) {
+    } catch (err: unknown) {
+      console.error("Upload payment proof error:", err);
+
+      const axiosError = err as {
+        response?: {
+          data?: {
+            message?: string;
+          };
+        };
+        message?: string;
+      };
+
       setError(
-        err instanceof Error ? err.message : "Terjadi kesalahan."
+        axiosError.response?.data?.message ||
+          axiosError.message ||
+          "Gagal mengunggah bukti pembayaran."
       );
     } finally {
       setUploading(false);
     }
   }
+
+  // ======================================================
+  // UI
+  // ======================================================
 
   return (
     <main className="min-h-screen bg-[#0B0B0D] px-4 py-12 text-[#F4F0E8]">
@@ -585,6 +622,10 @@ function CheckoutContent() {
     </main>
   );
 }
+
+// ======================================================
+// CHECKOUT PAGE
+// ======================================================
 
 export default function CheckoutPage() {
   return (
