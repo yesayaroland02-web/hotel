@@ -25,7 +25,7 @@ const PORT = 8000;
 
 app.use(
   cors({
-    origin: ["http://localhost:3000", "http://localhost:5173",  "https://eletronic-app.vercel.app"],
+    origin: ["http://localhost:3000", "http://localhost:5173",  "https://hotel-liart-nine.vercel.app"],
   }),
 );
 
