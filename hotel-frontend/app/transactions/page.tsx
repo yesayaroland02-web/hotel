@@ -67,6 +67,7 @@ export default function TransactionsPage() {
       minute: "2-digit",
     }).format(new Date(date));
 
+  // Mengambil riwayat transaksi
   const fetchTransactions = useCallback(async () => {
     try {
       setLoading(true);
@@ -82,7 +83,6 @@ export default function TransactionsPage() {
       const response = await api.get("/api/orders/my-orders");
 
       const result = response.data;
-
       const orderData = result.data;
 
       if (!Array.isArray(orderData)) {
@@ -276,38 +276,45 @@ export default function TransactionsPage() {
                         </p>
 
                         <div className="mt-5 space-y-4">
-                          {transaction.items?.map((item) => (
-                            <div
-                              key={item.id}
-                              className="flex items-center gap-4"
-                            >
-                              {item.product.imageUrl ? (
-                                <img
-                                  src={item.product.imageUrl}
-                                  alt={item.product.title}
-                                  className="h-16 w-20 rounded-xl object-cover"
-                                />
-                              ) : (
-                                <div className="flex h-16 w-20 items-center justify-center rounded-xl bg-gray-100 text-2xl">
-                                  🛏️
+                          {transaction.items?.map((item) => {
+                            // Harga satu kamar dikalikan jumlah kamar
+                            const unitPrice = Number(item.price);
+                            const subtotal =
+                              unitPrice * Number(item.quantity);
+
+                            return (
+                              <div
+                                key={item.id}
+                                className="flex items-center gap-4"
+                              >
+                                {item.product.imageUrl ? (
+                                  <img
+                                    src={item.product.imageUrl}
+                                    alt={item.product.title}
+                                    className="h-16 w-20 rounded-xl object-cover"
+                                  />
+                                ) : (
+                                  <div className="flex h-16 w-20 items-center justify-center rounded-xl bg-gray-100 text-2xl">
+                                    🛏️
+                                  </div>
+                                )}
+
+                                <div className="min-w-0">
+                                  <p className="truncate font-semibold text-gray-900">
+                                    {item.product.title}
+                                  </p>
+
+                                  <p className="mt-1 text-sm text-gray-500">
+                                    {item.quantity} kamar
+                                  </p>
+
+                                  <p className="mt-1 text-sm text-gray-600">
+                                    {formatRupiah(subtotal)}
+                                  </p>
                                 </div>
-                              )}
-
-                              <div className="min-w-0">
-                                <p className="truncate font-semibold text-gray-900">
-                                  {item.product.title}
-                                </p>
-
-                                <p className="mt-1 text-sm text-gray-500">
-                                  {item.quantity} kamar
-                                </p>
-
-                                <p className="mt-1 text-sm text-gray-600">
-                                  {formatRupiah(Number(item.price))}
-                                </p>
                               </div>
-                            </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       </div>
 
